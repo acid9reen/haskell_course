@@ -39,21 +39,26 @@ data Formula a = V a | C Op [Formula a]
 -- Примеры формул ниже принимаются интерпретатором, если не
 -- ограничивать импорт из модуля BooleanSyntax.
 
--- form1 = x v y -> ~z
+-- form1 = x \/ y -> ~z
 
 form1 :: Formula Char
 form1 = C If [C Or [V 'x', V 'y'], C Neg [V 'z']]
 
--- form2 = x v ~(y z)
+-- form2 = x \/ ~(y z)
 
 form2 :: Formula Char
 form2 = C Or [V 'x', C Neg [C And [V 'y', V 'z']]]
 
--- form3 = x y + z <-> x v z
+-- form3 = x y + z <-> x \/ z
 
 form3 :: Formula Char
 form3 = C Iff [C Xor [C And [V 'x', V 'y'], C Neg [V 'z']],
                C Or [V 'x', V 'z']]
+
+form4 :: Formula Char
+form4 = C Iff [V 'x']
+
+-- form4 = <-> x (incorrect arity)
 
 -- Задание 1. Напишите функцию correctArity, которая проверяет, что
 -- арность каждого оператора, объявленная в модуле BooleanSyntax,
@@ -65,7 +70,8 @@ form3 = C Iff [C Xor [C And [V 'x', V 'y'], C Neg [V 'z']],
 -- correctArity вернула True.
 
 correctArity :: Formula a -> Bool
-correctArity = undefined
+correctArity (V _) = True
+correctArity (C op args) = length args == arity op && all correctArity args 
 
 -------------------------------------------------
 -- 2. Текстовое представление формул
@@ -122,7 +128,11 @@ arityError = error "Arity other than 0, 1 or 2"
 -- использовать функцию showParen.
 
 fullParen :: Display a => Formula a -> DisplayS
-fullParen = undefined
+fullParen (V v) = displays v
+fullParen (C op []) = opText op
+fullParen (C op [arg]) = opText op . fullParen arg
+fullParen (C op [arg1, arg2]) = showParen True $ fullParen arg1 . opText op . fullParen arg2
+fullParen _ = arityError
 
 -- Вариант, учитывающий приоритет и ассоциативность операций
 
