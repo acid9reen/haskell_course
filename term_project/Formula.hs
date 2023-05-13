@@ -35,7 +35,7 @@ data Formula a = V a | C Op [Formula a]
 -------------------------------------------------
 -- 1. Примеры формул
 -------------------------------------------------
-  
+
 -- Примеры формул ниже принимаются интерпретатором, если не
 -- ограничивать импорт из модуля BooleanSyntax.
 
@@ -49,7 +49,7 @@ form1 = C If [C Or [V 'x', V 'y'], C Neg [V 'z']]
 form2 :: Formula Char
 form2 = C Or [V 'x', C Neg [C And [V 'y', V 'z']]]
 
--- form3 = x y + z <-> x \/ z
+-- form3 = x y + ~z <-> x \/ z
 
 form3 :: Formula Char
 form3 = C Iff [C Xor [C And [V 'x', V 'y'], C Neg [V 'z']],
@@ -71,7 +71,7 @@ form4 = C Iff [V 'x']
 
 correctArity :: Formula a -> Bool
 correctArity (V _) = True
-correctArity (C op args) = length args == arity op && all correctArity args 
+correctArity (C op args) = length args == arity op && all correctArity args
 
 -------------------------------------------------
 -- 2. Текстовое представление формул
@@ -130,8 +130,9 @@ arityError = error "Arity other than 0, 1 or 2"
 fullParen :: Display a => Formula a -> DisplayS
 fullParen (V v) = displays v
 fullParen (C op []) = opText op
-fullParen (C op [arg]) = opText op . fullParen arg
-fullParen (C op [arg1, arg2]) = showParen True $ fullParen arg1 . opText op . fullParen arg2
+fullParen (C op [arg]) = showParen True $ opText op . fullParen arg
+fullParen (C op [arg1, arg2]) = showParen True
+  $ fullParen arg1 . opText op . fullParen arg2
 fullParen _ = arityError
 
 -- Вариант, учитывающий приоритет и ассоциативность операций
@@ -180,16 +181,32 @@ data ArgPos = LeftArg | RightArg deriving (Show, Eq)
 --   аргументом внешнего оператора.
 -- Третий аргумент: формула, которую нужно напечатать.
 
+-- Вроде работает, но некрасиво))0
+
 displayFormula :: Display a => Op -> ArgPos -> Formula a -> DisplayS
-displayFormula = undefined
+displayFormula _ _ (V v) = displays v
+displayFormula _ _ (C op []) = opText op
+displayFormula extOp _ (C intOp [arg]) = showParen (prec extOp > prec intOp) -- Вроде была функция что можно улучшить в что-то типа (func > prec extOp intOp)
+  $ opText intOp . displayFormula intOp LeftArg arg
+displayFormula extOp formPos (C intOp [arg1, arg2]) = showParen needBraces
+  $ displayFormula intOp LeftArg arg1
+  . opText intOp
+  . displayFormula intOp RightArg arg2 where
+    needBraces =
+      prec extOp > prec intOp
+      || (prec extOp == prec intOp
+         && (extOp /= intOp || assoc intOp == NA || assoc intOp == neededAssoc)) where
+           neededAssoc = if formPos == LeftArg then RA else LA
+displayFormula _ _ _ = arityError
+
 
 -- После написания fullParen или displayFormula раскоментируйте
 -- соответствующий вариант объявления членства типа Formula в классе
 -- Display.
 
 instance Display a => Display (Formula a) where
-  displays f = fullParen f
---  displays f = displayFormula noOp LeftArg f
+  -- displays f = fullParen f
+ displays = displayFormula noOp LeftArg
 
 -- Примеры формул form1, form2 и form3 выше должны печататься так, как
 -- они записаны в комментариях перед определением.
@@ -216,14 +233,18 @@ type Environment = [Domain]
 -- с данным номером в окружении.
 
 lookupVar :: Environment -> Int -> Domain
-lookupVar = undefined
+lookupVar env index = env !! index
 
 -- Задание 5. Напишите функцию eval, возвращающую значение формулы
 -- типа Formula Int в окружении. Значения операций определяются функцией
 -- evalOp, определенной в модуле BooleanSyntax.
+testEnv :: [Domain] = [True, False]
+intForm1 :: Formula Int = C Or [V 0, V 1] -- -> True
+intForm2 :: Formula Int = C Or [V 0, V 0] -- -> False
 
 eval :: Environment -> Formula Int -> Domain
-eval = undefined
+eval env (V v) = lookupVar env v
+eval env (C op args) = evalOp op $ map (eval env) args
 
 -------------------------------------------------
 -- 4. Компиляция Formula a в Formula Int
@@ -245,7 +266,8 @@ eval = undefined
 -- не более одного раза. Можно использовать функцию nub из Data.List.
 
 collectVars1 :: Eq a => Formula a -> [a]
-collectVars1 = undefined
+collectVars1 (V v) = [v]
+collectVars1 (C _ args) = nub $ concatMap collectVars1 args
 
 -- Задание 7. Напишите функцию varsToInt, которая принимает список
 -- переменных и формулу и возвращает формулу типа Formula Int, где
@@ -255,14 +277,18 @@ collectVars1 = undefined
 -- Можно использовать функции из Data.List для поиска в списке.
 
 varsToInt :: Eq a => [a] -> Formula a -> Formula Int
-varsToInt = undefined
+varsToInt vars (V v) = case elemIndex v vars of
+  (Just index) -> V index
+  _ -> error "varsToInt: Variable occurs in the formula but not in the list"
+varsToInt vars (C op args) = C op $ map (varsToInt vars) args
 
 -- Задание 8. Напишите функцию compileFormula с аргументом f :: Formula a.
 -- Пусть vars есть список всех переменных f без повторений. Тогда
 -- compileFormula возвращает пару (length vars, varsToInt vars f).
 
 compileFormula :: Eq a => Formula a -> (Int, Formula Int)
-compileFormula = undefined
+compileFormula form = (length vars, varsToInt vars form) where
+  vars = collectVars1 form
 
 -------------------------------------------------
 -- 5. Значения формулы на всевозможных окружениях
@@ -275,7 +301,7 @@ compileFormula = undefined
 -- Enum и Bounded в Prelude.
 
 domain :: [Domain]
-domain = undefined
+domain = [minBound..maxBound]
 
 -- Задание 10. Напишите функцию allEnvs, которая принимает число n
 -- и возвращает список всех окружений длины n в лексикографическом
@@ -283,21 +309,36 @@ domain = undefined
 -- domain.
 
 allEnvs :: Int -> [Environment]
-allEnvs = undefined
+allEnvs 0 = [[]]
+allEnvs n = concatMap (addSymb $ allEnvs (n - 1)) domain where
+  addSymb tails_ symb = [symb:tail_ | tail_ <- tails_] 
 
 -- Задание 11. Напишите функцию formulaValues, которая возвращает
 -- значения формулы на всех наборах аргументов. В случае двузначной
 -- логики это последний столбец таблицы истинности. Формула должна
 -- компилироваться один раз.
 
+form5 :: Formula Char
+form5 = C Or [V 'x', V 'y']
+
+form6 :: Formula Char
+form6 = C And [V 'x', V 'y']
+
 formulaValues :: Eq a => Formula a -> [Domain]
-formulaValues = undefined
+formulaValues form = map (`eval` compiledForm) (allEnvs n) where
+  (n, compiledForm) = compileFormula form
 
 -- Задание 12. Напишите функцию isConstant c f, которая определяет, является
 -- ли формула f константой, принимающей значение c на всех окружениях
 
+constForm1 :: Formula Char
+constForm1 = C Or [V 'x', C Neg [V 'x']]
+
+constForm2 :: Formula Char
+constForm2 = C And [V 'x', C Neg [V 'x']]
+
 isConstant :: Eq a => Domain -> Formula a -> Bool
-isConstant = undefined
+isConstant c form = all (== c) $ formulaValues form 
 
 -------------------------------------------------
 -- 6. Варианты collectVars
